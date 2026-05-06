@@ -1,0 +1,137 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // /users/{userId}
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) 
+        && incoming().keys().hasAll(['email', 'createdAt'])
+        && incoming().createdAt == request.time
+        && incoming().role == 'user'; // Users can't make themselves admins
+      allow update: if isOwner(userId)
+        && incoming().diff(existing()).affectedKeys().hasAny(['displayName', 'photoURL', 'fcmTokens'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'fcmTokens']);
+    }
+
+    // /devices/{deviceId}
+    match /devices/{deviceId} {
+      function isValidDevice(data) {
+        return data.ownerId == request.auth.uid
+          && data.imei is string && data.imei.size() == 15 && data.imei.matches('^[0-9]+$')
+          && data.ownerFullname is string && data.ownerFullname.size() >= 2
+          && data.phoneNumber is string && data.phoneNumber.size() >= 10
+          && data.ghanaCardNumber is string && data.ghanaCardNumber.size() >= 6
+          && data.contactEmail is string
+          && data.status in ['active', 'lost', 'stolen', 'recovered'];
+      }
+
+      // Owners can read their own devices, others can check if it's lost/stolen
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.status in ['lost', 'stolen']);
+      
+      // Allow listing if user is the owner OR if we are doing an IMEI search
+      allow list: if (isSignedIn() && resource.data.ownerId == request.auth.uid) 
+        || (resource.data.imei is string && resource.data.imei.size() >= 14);
+      
+      allow create: if isSignedIn() && isValidDevice(incoming())
+        && incoming().registeredAt == request.time;
+      
+      allow update: if (isSignedIn() && existing().ownerId == request.auth.uid && (
+          // Action: Update status (Owner)
+          (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) && incoming().status in ['active', 'lost', 'stolen', 'recovered'])
+          ||
+          // Action: Update location
+          (incoming().diff(existing()).affectedKeys().hasOnly(['lastLocation']))
+        ))
+        || 
+        // Action: Official Block/Unblock (No login required or by anyone)
+        (
+          (incoming().status == 'stolen' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'lastBlockCode', 'updatedAt']))
+          ||
+          (incoming().status == 'active' && incoming().lastBlockCode == existing().lastBlockCode && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      
+      allow delete: if isSignedIn() && existing().ownerId == request.auth.uid;
+    }
+
+    // /reports/{reportId}
+    match /reports/{reportId} {
+      function isValidReport(data) {
+        return (data.reporterId == request.auth.uid || data.isOfficialBlock == true)
+          && data.type in ['lost', 'stolen']
+          && (data.isOfficialBlock == true || data.deviceId is string);
+      }
+
+      // Public can check reports for search results
+      allow get: if (isSignedIn() && (resource.data.reporterId == request.auth.uid || resource.data.ownerId == request.auth.uid)) || resource.data.isOfficialBlock == true;
+      allow list: if (isSignedIn() && (resource.data.reporterId == request.auth.uid || resource.data.ownerId == request.auth.uid)) 
+        || resource.data.isOfficialBlock == true
+        || (resource.data.imei is string && resource.data.imei.size() >= 14);
+      
+      allow create: if (isSignedIn() && isValidReport(incoming()) && (incoming().isOfficialBlock == true || get(/databases/$(database)/documents/devices/$(incoming().deviceId)).data.ownerId == request.auth.uid))
+        || (incoming().isOfficialBlock == true && incoming().status == 'blocked'); // Allow anyone to block if official
+      
+      allow update: if (isSignedIn() && existing().reporterId == request.auth.uid)
+        || (existing().isOfficialBlock == true && incoming().status == 'unblocked' && incoming().blockCode == existing().blockCode);
+
+      allow delete: if isSignedIn() && existing().reporterId == request.auth.uid;
+    }
+
+    // /notifications/{notifId}
+    match /notifications/{notifId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.userId == null); // null check for safety during transition
+      allow create: if isSignedIn() && incoming().userId is string;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // /deviceHistory/{historyId}
+    match /deviceHistory/{historyId} {
+      function isValidHistory(data) {
+        return data.ownerId == request.auth.uid
+          && data.deviceId is string
+          && data.eventType in ["status_change", "location_update", "registration", "recovery"]
+          && data.timestamp == request.time;
+      }
+
+      allow get, list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      
+      allow create: if isSignedIn() && isValidHistory(incoming())
+        // Verify user owns the device they are logging history for
+        && get(/databases/$(database)/documents/devices/$(incoming().deviceId)).data.ownerId == request.auth.uid;
+      
+      // History is immutable
+      allow update, delete: if false;
+    }
+  }
+}

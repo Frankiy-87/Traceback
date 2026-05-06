@@ -1,0 +1,6 @@
+{
+  "name": "TraceBack",
+  "description": "A secure lost device recovery hub to report stolen devices, track IMEI numbers, and manage recovery steps.",
+  "requestFramePermissions": ["geolocation", "camera"],
+  "majorCapabilities": []
+}

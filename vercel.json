@@ -1,0 +1,9 @@
+{
+  "rewrite": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "framework": "vite"
+}

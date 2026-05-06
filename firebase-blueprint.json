@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "fcmTokens": { 
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "Device": {
+      "title": "Device",
+      "description": "Electronic device registered for recovery",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "imei": { "type": "string" },
+        "serialNumber": { "type": "string" },
+        "ownerFullname": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "ghanaCardNumber": { "type": "string" },
+        "contactEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "lost", "stolen", "recovered"] },
+        "registeredAt": { "type": "string", "format": "date-time" },
+        "lastLocation": {
+          "type": "object",
+          "properties": {
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" },
+            "updatedAt": { "type": "string", "format": "date-time" }
+          }
+        }
+      },
+      "required": ["ownerId", "imei", "status", "registeredAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Incident report for a stolen or lost device",
+      "type": "object",
+      "properties": {
+        "deviceId": { "type": "string" },
+        "reporterId": { "type": "string" },
+        "type": { "type": "string", "enum": ["lost", "stolen"] },
+        "location": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "description": { "type": "string" },
+        "notifiedAuthorities": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "status": { "type": "string", "enum": ["pending", "verified", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["deviceId", "reporterId", "type", "createdAt"]
+    },
+    "DeviceHistory": {
+      "title": "Device History",
+      "description": "Historical audit trail of device events",
+      "type": "object",
+      "properties": {
+        "deviceId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "eventType": { "type": "string", "enum": ["status_change", "location_update", "registration", "recovery"] },
+        "oldValue": { "type": "string" },
+        "newValue": { "type": "string" },
+        "metadata": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["deviceId", "ownerId", "eventType", "timestamp"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app persistent notification",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" },
+        "type": { "type": "string" }
+      },
+      "required": ["userId", "title", "body", "createdAt", "read"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/devices/{deviceId}": {
+      "schema": "Device",
+      "description": "Registered devices"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Incident reports"
+    },
+    "/deviceHistory/{historyId}": {
+      "schema": "DeviceHistory",
+      "description": "Device event history logs"
+    },
+    "/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    }
+  }
+}
